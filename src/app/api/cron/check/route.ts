@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { fetchEarthquakes } from "@/lib/earthquakes";
-import { formatMagnitude } from "@/lib/format";
+import { formatDistanceKm, formatMagnitude } from "@/lib/format";
+import { haversineKm } from "@/lib/geo";
 import { getWebPush, isPushConfigured } from "@/lib/push";
 import {
   getAllSubscriptions,
@@ -51,16 +52,28 @@ export async function GET(request: NextRequest) {
   let sent = 0;
 
   for (const sub of subscriptions) {
+    const cityFilter = sub.settings.city;
+
     const relevant = newQuakes.filter((quake) => {
       if (quake.magnitude < sub.settings.minMagnitude) return false;
+      if (cityFilter) {
+        const distanceKm = haversineKm(quake.latitude, quake.longitude, cityFilter.lat, cityFilter.lon);
+        return distanceKm <= cityFilter.radiusKm;
+      }
       if (sub.settings.region === "iran" && !quake.nearestCity) return false;
       return true;
     });
 
     for (const quake of relevant) {
-      const location = quake.nearestCity
-        ? `${quake.nearestCity.distanceKm} کیلومتری ${quake.nearestCity.name}`
-        : quake.place;
+      let location: string;
+      if (cityFilter) {
+        const distanceKm = haversineKm(quake.latitude, quake.longitude, cityFilter.lat, cityFilter.lon);
+        location = `${formatDistanceKm(distanceKm)} از ${cityFilter.name}`;
+      } else if (quake.nearestCity) {
+        location = `${quake.nearestCity.distanceKm} کیلومتری ${quake.nearestCity.name}`;
+      } else {
+        location = quake.place;
+      }
 
       try {
         await webpush.sendNotification(

@@ -1,11 +1,25 @@
 import type { NextRequest } from "next/server";
 import { upsertSubscription } from "@/lib/store";
-import type { AlertSettings } from "@/lib/types";
+import type { AlertSettings, CityFilter } from "@/lib/types";
 import type { PushSubscription } from "web-push";
 
 interface SubscribeBody {
   subscription?: PushSubscription;
   settings?: Partial<AlertSettings>;
+}
+
+function normalizeCity(raw: unknown): CityFilter | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  if (
+    typeof value.name !== "string" ||
+    typeof value.lat !== "number" ||
+    typeof value.lon !== "number" ||
+    typeof value.radiusKm !== "number"
+  ) {
+    return null;
+  }
+  return { name: value.name, lat: value.lat, lon: value.lon, radiusKm: value.radiusKm };
 }
 
 export async function POST(request: NextRequest) {
@@ -26,6 +40,7 @@ export async function POST(request: NextRequest) {
     region: settings?.region === "world" ? "world" : "iran",
     minMagnitude:
       typeof settings?.minMagnitude === "number" ? settings.minMagnitude : 4,
+    city: normalizeCity(settings?.city),
   };
 
   await upsertSubscription(subscription, normalizedSettings);

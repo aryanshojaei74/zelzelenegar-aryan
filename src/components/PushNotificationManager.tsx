@@ -1,10 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useMyCity } from "@/hooks/useMyCity";
+import { IRAN_CITIES } from "@/lib/cities";
 import { formatMagnitude, toPersianDigits } from "@/lib/format";
-import type { Region } from "@/lib/types";
+import type { CityFilter, Region } from "@/lib/types";
+import CitySelector from "./CitySelector";
 
 const MAGNITUDE_OPTIONS = [2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7];
+type AlertMode = "region" | "city";
+
+function buildCityFilter(mode: AlertMode, cityName: string | null, radiusKm: number): CityFilter | null {
+  if (mode !== "city" || !cityName) return null;
+  const city = IRAN_CITIES.find((candidate) => candidate.name === cityName);
+  if (!city) return null;
+  return { name: city.name, lat: city.lat, lon: city.lon, radiusKm };
+}
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -22,6 +33,8 @@ export default function PushNotificationManager() {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [region, setRegion] = useState<Region>("iran");
   const [minMagnitude, setMinMagnitude] = useState(4);
+  const [alertMode, setAlertMode] = useState<AlertMode>("region");
+  const { cityName, setCityName, radiusKm, setRadiusKm } = useMyCity();
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
@@ -42,13 +55,18 @@ export default function PushNotificationManager() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
-  async function saveSettings(sub: PushSubscription, nextRegion: Region, nextMinMagnitude: number) {
+  async function saveSettings(
+    sub: PushSubscription,
+    nextRegion: Region,
+    nextMinMagnitude: number,
+    nextCity: CityFilter | null
+  ) {
     await fetch("/api/push/subscribe", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         subscription: sub.toJSON(),
-        settings: { region: nextRegion, minMagnitude: nextMinMagnitude },
+        settings: { region: nextRegion, minMagnitude: nextMinMagnitude, city: nextCity },
       }),
     });
   }
@@ -75,7 +93,7 @@ export default function PushNotificationManager() {
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       });
 
-      await saveSettings(sub, region, minMagnitude);
+      await saveSettings(sub, region, minMagnitude, buildCityFilter(alertMode, cityName, radiusKm));
       setSubscription(sub);
       setStatus("هشدارهای زلزله فعال شد.");
     } catch (error) {
@@ -130,14 +148,35 @@ export default function PushNotificationManager() {
   function handleRegionChange(nextRegion: Region) {
     setRegion(nextRegion);
     if (subscription) {
-      saveSettings(subscription, nextRegion, minMagnitude);
+      saveSettings(subscription, nextRegion, minMagnitude, buildCityFilter(alertMode, cityName, radiusKm));
     }
   }
 
   function handleMagnitudeChange(value: number) {
     setMinMagnitude(value);
     if (subscription) {
-      saveSettings(subscription, region, value);
+      saveSettings(subscription, region, value, buildCityFilter(alertMode, cityName, radiusKm));
+    }
+  }
+
+  function handleAlertModeChange(mode: AlertMode) {
+    setAlertMode(mode);
+    if (subscription) {
+      saveSettings(subscription, region, minMagnitude, buildCityFilter(mode, cityName, radiusKm));
+    }
+  }
+
+  function handleAlertCityChange(nextCityName: string) {
+    setCityName(nextCityName);
+    if (subscription) {
+      saveSettings(subscription, region, minMagnitude, buildCityFilter(alertMode, nextCityName, radiusKm));
+    }
+  }
+
+  function handleAlertRadiusChange(nextRadiusKm: number) {
+    setRadiusKm(nextRadiusKm);
+    if (subscription) {
+      saveSettings(subscription, region, minMagnitude, buildCityFilter(alertMode, cityName, nextRadiusKm));
     }
   }
 
@@ -176,22 +215,54 @@ export default function PushNotificationManager() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <p className="text-sm text-slate-300">منطقه دریافت هشدار</p>
+        <p className="text-sm text-slate-300">نوع هشدار</p>
         <div className="inline-flex rounded-full bg-slate-800 p-1 text-sm">
-          {(["iran", "world"] as Region[]).map((value) => (
+          {(["region", "city"] as AlertMode[]).map((mode) => (
             <button
-              key={value}
+              key={mode}
               type="button"
-              onClick={() => handleRegionChange(value)}
+              onClick={() => handleAlertModeChange(mode)}
               className={`rounded-full px-4 py-1.5 font-medium transition ${
-                region === value ? "bg-red-600 text-white" : "text-slate-400 hover:text-slate-200"
+                alertMode === mode ? "bg-red-600 text-white" : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              {value === "iran" ? "ایران" : "جهان"}
+              {mode === "region" ? "بر اساس منطقه" : "فقط شهر من"}
             </button>
           ))}
         </div>
       </div>
+
+      {alertMode === "region" ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-slate-300">منطقه دریافت هشدار</p>
+          <div className="inline-flex rounded-full bg-slate-800 p-1 text-sm">
+            {(["iran", "world"] as Region[]).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => handleRegionChange(value)}
+                className={`rounded-full px-4 py-1.5 font-medium transition ${
+                  region === value ? "bg-red-600 text-white" : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {value === "iran" ? "ایران" : "جهان"}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-slate-300">
+            فقط زلزله‌های نزدیک شهر انتخاب‌شده هشدار می‌دهند.
+          </p>
+          <CitySelector
+            cityName={cityName}
+            radiusKm={radiusKm}
+            onCityChange={handleAlertCityChange}
+            onRadiusChange={handleAlertRadiusChange}
+          />
+        </div>
+      )}
 
       <div className="flex flex-col gap-2">
         <p className="text-sm text-slate-300">

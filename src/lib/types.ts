@@ -60,9 +60,17 @@ export interface NormalizedEarthquake {
   nearestCity: NearestCity | null;
 }
 
+export interface CityFilter {
+  name: string;
+  lat: number;
+  lon: number;
+  radiusKm: number;
+}
+
 export interface AlertSettings {
   region: Region;
   minMagnitude: number;
+  city: CityFilter | null;
 }
 
 export interface EarthquakesResponse {
