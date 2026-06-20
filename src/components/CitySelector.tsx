@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IRAN_CITIES } from "@/lib/cities";
 import { nearestCity } from "@/lib/geo";
 import { toPersianDigits } from "@/lib/format";
@@ -20,11 +20,18 @@ export default function CitySelector({
   onCityChange,
   onRadiusChange,
 }: CitySelectorProps) {
-  const [province, setProvince] = useState<string | null>(
-    () => IRAN_CITIES.find((c) => c.name === cityName)?.province ?? null
-  );
+  const [province, setProvince] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState<string | null>(null);
+
+  // Sync province chip whenever cityName changes from the parent (geolocation,
+  // localStorage rehydration, or picking a city in the dropdown).
+  useEffect(() => {
+    if (cityName) {
+      const found = IRAN_CITIES.find((c) => c.name === cityName);
+      if (found) setProvince(found.province);
+    }
+  }, [cityName]);
 
   const provinces = useMemo(
     () => Array.from(new Set(IRAN_CITIES.map((c) => c.province))).sort(),
@@ -46,7 +53,6 @@ export default function CitySelector({
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { city } = nearestCity(position.coords.latitude, position.coords.longitude);
-        setProvince(city.province);
         onCityChange(city.name);
         setLocating(false);
       },
@@ -56,6 +62,20 @@ export default function CitySelector({
       },
       { timeout: 10000 }
     );
+  }
+
+  function handleProvinceClick(p: string) {
+    setProvince(p);
+    // If the current city belongs to a different province, clear it so the
+    // controlled <select> doesn't end up with a value that's missing from the
+    // filtered option list (which causes the browser to auto-highlight the
+    // first option and swallow the next onChange).
+    const currentProvince = cityName
+      ? IRAN_CITIES.find((c) => c.name === cityName)?.province
+      : null;
+    if (cityName && currentProvince !== p) {
+      onCityChange("");
+    }
   }
 
   return (
@@ -98,7 +118,7 @@ export default function CitySelector({
             <button
               key={p}
               type="button"
-              onClick={() => setProvince(p)}
+              onClick={() => handleProvinceClick(p)}
               className={`rounded-full px-3 py-1 text-xs font-medium transition ${
                 province === p
                   ? "bg-red-600 text-white"
@@ -114,8 +134,6 @@ export default function CitySelector({
       <select
         value={cityName ?? ""}
         onChange={(event) => {
-          const chosen = IRAN_CITIES.find((c) => c.name === event.target.value);
-          if (chosen) setProvince(chosen.province);
           onCityChange(event.target.value);
         }}
         className="w-full rounded-xl bg-slate-800 px-3 py-2 text-sm text-slate-200"
